@@ -2,6 +2,8 @@ pipeline {
     agent any
 
     options {
+        // The repository directory is mounted into this Linux Jenkins agent
+        // with different ownership. Trust only this job's workspace before Git checks it.
         skipDefaultCheckout(true)
         disableConcurrentBuilds()
         timestamps()

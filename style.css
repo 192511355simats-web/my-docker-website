@@ -5,7 +5,7 @@
     --bg: #080b18;
     --surface: #10162a;
     --surface-light: #151d35;
-    --purple: #9b7bff;
+    --purple: #ff7bdc;
     --cyan: #5de3ed;
     --white: #f5f6ff;
     --muted: #a0a8c0;
@@ -580,4 +580,4 @@ footer p {
         flex-direction: column;
     }
 }
-    
+ 
