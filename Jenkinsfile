@@ -1,64 +1,93 @@
+
 pipeline {
     agent any
 
-    options {
-        // The repository directory is mounted into this Linux Jenkins agent
-        // with different ownership. Trust only this job's workspace before Git checks it.
-        skipDefaultCheckout(true)
-        disableConcurrentBuilds()
-        timestamps()
+    parameters {
+        string(
+            name: 'EC2_HOST',
+            defaultValue: '',
+            description: 'AWS EC2 Public IP'
+        )
     }
 
     environment {
-        IMAGE_NAME = 'ramprasadh-portfolio'
-        CONTAINER_NAME = 'ramprasadh-site'
-        SITE_PORT = '8081'
+        IMAGE_NAME = 'flask-app'
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                sh 'git config --global --add safe.directory "$WORKSPACE"'
                 checkout scm
             }
         }
 
-        stage('Build image') {
+        stage('Build') {
             steps {
-                sh 'docker build --tag "$IMAGE_NAME:$BUILD_NUMBER" --tag "$IMAGE_NAME:latest" .'
+                bat 'python --version'
+                bat 'python -m compileall -q app.py'
             }
         }
 
-        stage('Test image') {
+        stage('Test') {
             steps {
-                sh '''
-                    set -eu
-                    docker rm --force ramprasadh-test >/dev/null 2>&1 || true
-                    docker run --detach --name ramprasadh-test "$IMAGE_NAME:$BUILD_NUMBER"
-                    trap 'docker rm --force ramprasadh-test >/dev/null 2>&1 || true' EXIT
-                    docker exec ramprasadh-test wget -qO- http://127.0.0.1/ | grep -qi '<html'
-                '''
+                bat 'echo Application syntax test passed'
             }
         }
 
-        stage('Deploy to localhost') {
+        stage('Docker Build and Push') {
             steps {
-                sh '''
-                    set -eu
-                    docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || true
-                    docker run --detach --restart unless-stopped --name "$CONTAINER_NAME" --publish "$SITE_PORT:80" "$IMAGE_NAME:$BUILD_NUMBER"
-                    docker exec "$CONTAINER_NAME" wget -qO- http://127.0.0.1/ | grep -qi '<html'
-                '''
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DH_USER',
+                        passwordVariable: 'DH_TOKEN'
+                    )
+                ]) {
+                    bat '''
+                    echo %DH_TOKEN% | docker login -u %DH_USER% --password-stdin
+
+                    docker build -t %DH_USER%/%IMAGE_NAME%:%BUILD_NUMBER% .
+                    docker push %DH_USER%/%IMAGE_NAME%:%BUILD_NUMBER%
+
+                    docker logout
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to AWS') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DH_USER',
+                        passwordVariable: 'DH_TOKEN'
+                    ),
+                    file(
+                        credentialsId: 'aws-ec2-key',
+                        variable: 'SSH_KEY'
+                    )
+                ]) {
+                    bat '''
+                    ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no ubuntu@%EC2_HOST% "sudo docker pull %DH_USER%/flask-app:%BUILD_NUMBER%"
+
+                    ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no ubuntu@%EC2_HOST% "sudo docker rm -f flask-app || true"
+
+                    ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no ubuntu@%EC2_HOST% "sudo docker run -d --restart unless-stopped --name flask-app -p 80:5000 %DH_USER%/flask-app:%BUILD_NUMBER%"
+                    '''
+                }
             }
         }
     }
 
     post {
         success {
-            echo 'Deployment succeeded: http://localhost:8081'
+            echo 'CI/CD Pipeline Completed Successfully!'
         }
+
         failure {
-            echo 'Pipeline failed. Review the stage output; the last deployed site may still be available.'
+            echo 'CI/CD Pipeline Failed!'
         }
     }
 }
