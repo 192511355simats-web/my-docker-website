@@ -24,14 +24,14 @@ pipeline {
 
         stage('Build') {
             steps {
-                bat 'python --version'
-                bat 'python -m compileall -q app.py'
+                sh 'python3 --version'
+                sh 'python3 -m compileall -q app.py'
             }
         }
 
         stage('Test') {
             steps {
-                bat 'echo Application syntax test passed'
+                sh 'echo Application syntax test passed'
             }
         }
 
@@ -44,13 +44,13 @@ pipeline {
                         passwordVariable: 'DH_TOKEN'
                     )
                 ]) {
-                    bat '''
-                    echo %DH_TOKEN% | docker login -u %DH_USER% --password-stdin
+                    sh '''
+                        echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
 
-                    docker build -t %DH_USER%/%IMAGE_NAME%:%BUILD_NUMBER% .
-                    docker push %DH_USER%/%IMAGE_NAME%:%BUILD_NUMBER%
+                        docker build -t "$DH_USER/$IMAGE_NAME:$BUILD_NUMBER" .
+                        docker push "$DH_USER/$IMAGE_NAME:$BUILD_NUMBER"
 
-                    docker logout
+                        docker logout
                     '''
                 }
             }
@@ -69,12 +69,12 @@ pipeline {
                         variable: 'SSH_KEY'
                     )
                 ]) {
-                    bat '''
-                    ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no ubuntu@%EC2_HOST% "sudo docker pull %DH_USER%/flask-app:%BUILD_NUMBER%"
+                    sh '''
+                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "sudo docker pull $DH_USER/flask-app:$BUILD_NUMBER"
 
-                    ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no ubuntu@%EC2_HOST% "sudo docker rm -f flask-app || true"
+                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "sudo docker rm -f flask-app || true"
 
-                    ssh -i "%SSH_KEY%" -o StrictHostKeyChecking=no ubuntu@%EC2_HOST% "sudo docker run -d --restart unless-stopped --name flask-app -p 80:5000 %DH_USER%/flask-app:%BUILD_NUMBER%"
+                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "sudo docker run -d --restart unless-stopped --name flask-app -p 80:5000 $DH_USER/flask-app:$BUILD_NUMBER"
                     '''
                 }
             }
