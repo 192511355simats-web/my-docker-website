@@ -5,7 +5,7 @@ pipeline {
     parameters {
         string(
             name: 'EC2_HOST',
-            defaultValue: '',
+            defaultValue: '13.210.12.184',
             description: 'AWS EC2 Public IP'
         )
     }
@@ -24,14 +24,23 @@ pipeline {
 
         stage('Build') {
             steps {
-                sh 'python3 --version'
-                sh 'python3 -m compileall -q app.py'
+                sh '''
+                    echo "Checking website files..."
+                    test -f index.html
+                    test -f style.css
+                    echo "Website files found successfully"
+                '''
             }
         }
 
         stage('Test') {
             steps {
-                sh 'echo Application syntax test passed'
+                sh '''
+                    echo "Testing website files..."
+                    test -s index.html
+                    test -s style.css
+                    echo "Website test passed"
+                '''
             }
         }
 
@@ -47,8 +56,12 @@ pipeline {
                     sh '''
                         echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
 
-                        docker build -t "$DH_USER/$IMAGE_NAME:$BUILD_NUMBER" .
+                        docker build \
+                            -t "$DH_USER/$IMAGE_NAME:$BUILD_NUMBER" \
+                            -t "$DH_USER/$IMAGE_NAME:latest" .
+
                         docker push "$DH_USER/$IMAGE_NAME:$BUILD_NUMBER"
+                        docker push "$DH_USER/$IMAGE_NAME:latest"
 
                         docker logout
                     '''
@@ -70,11 +83,20 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "sudo docker pull $DH_USER/flask-app:$BUILD_NUMBER"
+                        ssh -i "$SSH_KEY" \
+                            -o StrictHostKeyChecking=no \
+                            ubuntu@"$EC2_HOST" \
+                            "sudo docker pull $DH_USER/$IMAGE_NAME:$BUILD_NUMBER"
 
-                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "sudo docker rm -f flask-app || true"
+                        ssh -i "$SSH_KEY" \
+                            -o StrictHostKeyChecking=no \
+                            ubuntu@"$EC2_HOST" \
+                            "sudo docker rm -f flask-app || true"
 
-                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "sudo docker run -d --restart unless-stopped --name flask-app -p 80:5000 $DH_USER/flask-app:$BUILD_NUMBER"
+                        ssh -i "$SSH_KEY" \
+                            -o StrictHostKeyChecking=no \
+                            ubuntu@"$EC2_HOST" \
+                            "sudo docker run -d --restart unless-stopped --name flask-app -p 80:80 $DH_USER/$IMAGE_NAME:$BUILD_NUMBER"
                     '''
                 }
             }
